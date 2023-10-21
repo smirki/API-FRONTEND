@@ -1,0 +1,239 @@
+{% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+        <div class="flash-messages">
+            {% for category, message in messages %}
+                <div class="alert alert-{{ category }}">{{ message }}</div>
+            {% endfor %}
+        </div>
+    {% endif %}
+{% endwith %}
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Teacher Control</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+
+
+</head>
+<body class="bg-gray-100 h-screen font-sans">
+    <div class="flex">
+        <!-- Sidebar -->
+        <div class="w-64 bg-white p-8 shadow-md">
+            <h3 class="text-xl font-bold mb-4">Navigation</h3>
+            <ul>
+                <li><a href="#" class="block py-1 px-3 hover:bg-gray-200">Dashboard</a></li>
+                <li><a href="#" class="block py-1 px-3 hover:bg-gray-200">Reports</a></li>
+            </ul>
+        </div>
+
+        <!-- Main Content -->
+        <div class="flex-1 p-8">
+            <div class="container mx-auto px-4 mt-10">
+                <h1 class="text-3xl mb-6 text-center font-bold text-blue-600">Teacher Control Panel</h1>
+
+                
+                <form action="/teacher" method="post" class="space-y-4">
+                    <!-- Tabs for Question Types -->
+                    <div class="bg-white rounded-lg shadow-lg p-8 mb-6">
+                        <div class="flex space-x-4">
+                            <button type="button" class="py-2 px-4 border-2 border-blue-600 text-blue-600 hover:bg-blue-600 hover:text-white rounded" onclick="showTab('custom')">Custom Questions</button>
+                            <button type="button" class="py-2 px-4 border-2 border-blue-600 text-blue-600 hover:bg-blue-600 hover:text-white rounded relative" onclick="showTab('smart')">Smart Questions</button>
+                        </div>
+                    </div>
+                
+                    <!-- Content for Custom Questions Tab -->
+                    <div id="custom-tab" class="hidden bg-white rounded-lg shadow-lg p-8 mb-6">
+                        <button type="button" class="py-2 px-4 bg-blue-600 text-white rounded hover:bg-blue-700 mb-4" onclick="addQuestionRow()">+ Add Question</button>
+                        <!-- Custom Questions Container -->
+                        <div id="custom-questions"></div>
+                    </div>
+                
+                    <!-- Content for Smart Questions Tab -->
+                    <div id="smart-tab" class="hidden bg-white rounded-lg shadow-lg p-8 mb-6">
+                        <div>
+                            <label for="content" class="block text-sm font-medium text-gray-700">Set Content:</label>
+                            <textarea name="content" id="content" rows="4" class="mt-1 p-2 w-full border rounded-md">{{ quiz_data['content'] }}</textarea>
+                        </div>
+                        <div>
+                            <label for="num_questions" class="block text-sm font-medium text-gray-700">Number of Questions:</label>
+                            <input type="number" id="num_questions" name="num_questions" value="{{ quiz_data['num_questions'] }}" class="mt-1 p-2 w-full border rounded-md">
+                        </div>
+                    </div>
+                
+                    <!-- Action Buttons -->
+                    <div class="bg-white rounded-lg shadow-lg p-8 mb-6">
+                        <div class="flex space-x-4 mt-6">
+                            <input type="submit" name="start" value="Start Quiz" class="py-2 px-4 bg-blue-600 text-white rounded hover:bg-blue-700">
+                            <input type="submit" name="end" value="End Quiz" class="py-2 px-4 bg-yellow-600 text-white rounded hover:bg-yellow-700">
+                            <input type="submit" name="collect" value="Collect Reports" class="py-2 px-4 bg-green-600 text-white rounded hover:bg-green-700">
+                            <input type="hidden" name="tab_type" id="tab_type" value="smart">
+                        </div>
+                    </div>
+                </form>
+                
+
+                <!-- Student Responses Card -->
+                <div class="bg-white rounded-lg shadow-lg p-8 mb-6">
+                    <div class="mt-10">
+                        <h2 class="text-2xl mb-4 font-bold text-gray-800">Student Responses</h2>
+                        <table class="min-w-full divide-y divide-gray-200">
+                            <thead>
+                                <tr>
+                                    <th class="py-2 px-4 bg-gray-50">Student ID</th>
+                                    {% for i in range(quiz_data['num_questions']) %}
+                                        <th class="py-2 px-4 bg-gray-50">Q{{ i+1 }}</th>
+                                    {% endfor %}
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for student_id, answers in quiz_data['students'].items() %}
+                                    <tr>
+                                        <td class="py-2 px-4"> <a href="{{ url_for('student_report', id=student_id) }}" class="text-blue-500 hover:underline">{{ student_id }}</a></td>
+                                        {% for answer in answers %}
+                                            <td class="py-2 px-4 text-center">{% if answer['is_correct'] %}✅{% else %}❌{% endif %}</td>
+                                        {% endfor %}
+                                    </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Student Reports Card -->
+                <div class="bg-white rounded-lg shadow-lg p-8 mb-6">
+                    <h2 class="text-2xl mb-4 font-bold text-gray-800">Student Reports</h2>
+                    <ul id="reports-list">
+                        <!-- Text Reports -->
+                    </ul>
+                </div>
+
+                <!-- Quiz Results Card -->
+                <div class="bg-white rounded-lg shadow-lg p-8 mb-6" id="quiz-results">
+                    <svg width="700" height="500"></svg>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    
+    
+    <script>
+        // Fetch the quiz data
+fetch('/quiz_data')
+.then(response => response.json())
+.then(data => {
+    const svg = d3.select("svg");
+    const width = +svg.attr("width");
+    const height = +svg.attr("height");
+
+    const x = d3.scaleBand()
+        .domain(data.students.map(d => d.student_id))
+        .range([0, width])
+        .padding(0.1);
+
+    const y = d3.scaleLinear()
+        .domain([0, data.num_questions])
+        .range([height, 0]);
+
+    const color = d3.scaleOrdinal()
+        .domain([true, false])
+        .range(["green", "red"]);
+
+    // Create stacked bar chart
+    svg.selectAll(".student-bar")
+        .data(data.students)
+        .enter().append("g")
+        .attr("class", "student-bar")
+        .attr("transform", d => `translate(${x(d.student_id)}, 0)`)
+        .selectAll("rect")
+        .data(d => d.results)
+        .enter().append("rect")
+        .attr("x", 0)
+        .attr("y", (d, i) => y(i + 1))
+        .attr("height", y(0) - y(1))
+        .attr("width", x.bandwidth())
+        .attr("fill", d => color(d));
+
+    // Append reports to the reports-list
+    let reportsList = document.getElementById('reports-list');
+data.students.forEach(student => {
+    let listItem = document.createElement('li');
+    let incorrectCount = student.results.filter(result => !result).length;
+    listItem.textContent = `Report for Student ${student.student_id}: `;
+
+    // Fetch full report for each student
+    fetch(`/student/${student.student_id}/report`)
+    .then(response => response.text())
+    .then(report => {
+        listItem.textContent += report;
+        reportsList.appendChild(listItem);
+    });
+});
+});
+
+function addQuestionRow() {
+    let container = document.getElementById('custom-questions');
+    let questionDiv = document.createElement('div');
+    questionDiv.innerHTML = `
+        <label class="block text-sm font-medium text-gray-700">Question:</label>
+        <input type="text" name="custom_question[]" class="mt-1 p-2 w-full border rounded-md">
+        <label class="block text-sm font-medium text-gray-700 mt-2">Answer:</label>
+        <input type="text" name="custom_answer[]" class="mt-1 p-2 w-full border rounded-md">
+    `;
+    container.appendChild(questionDiv);
+}
+function showTab(tabName) {
+    document.getElementById('tab_type').value = tabName;
+
+            if (tabName === 'custom') {
+                document.getElementById('custom-tab').style.display = 'block';
+                document.getElementById('smart-tab').style.display = 'none';
+            } else if (tabName === 'smart') {
+                document.getElementById('custom-tab').style.display = 'none';
+                document.getElementById('smart-tab').style.display = 'block';
+                
+            }
+        }
+
+        socketio = io.connect(location.origin);  // Connect to the server's Socket.IO endpoint
+
+        socketio.on('student_update', function(data) {
+    // This function gets executed whenever a 'student_update' event is received from the server
+    console.log(data);  // Log the data to the console
+
+    // Find the student's row in the table
+    let studentRow = Array.from(document.querySelectorAll('tbody tr td')).find(td => td.innerText === data.student_id)?.parentNode;
+
+    if (!studentRow) {
+        // If the student row doesn't exist, create it and add to the table
+        let tbody = document.querySelector('tbody');
+        studentRow = document.createElement('tr');
+        let studentIdCell = document.createElement('td');
+        studentIdCell.innerText = data.student_id;
+        studentRow.appendChild(studentIdCell);
+        tbody.appendChild(studentRow);
+    }
+
+    // Update the student's answers in the table
+    data.results.forEach((result, index) => {
+        let answerCell = studentRow.children[index + 1];  // +1 because the first cell is student ID
+        if (!answerCell) {
+            // If the cell doesn't exist, create it
+            answerCell = document.createElement('td');
+            studentRow.appendChild(answerCell);
+        }
+        answerCell.innerText = result.is_correct ? '✅' : '❌';
+        answerCell.classList.add('py-2', 'px-4', 'text-center');
+    });
+});
+    </script>
+    
+        
+</body>
+</html>
